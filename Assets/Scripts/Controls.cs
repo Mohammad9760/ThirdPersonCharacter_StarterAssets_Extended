@@ -295,7 +295,7 @@ public partial class @Controls: IInputActionCollection2, IDisposable
                 {
                     ""name"": """",
                     ""id"": ""8c1fb5ac-4c53-482d-9e36-b4cc4bc07372"",
-                    ""path"": ""<Keyboard>/alt"",
+                    ""path"": ""<Keyboard>/c"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": ""KeyboadMouse"",

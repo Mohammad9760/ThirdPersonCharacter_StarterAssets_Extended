@@ -96,7 +96,7 @@ public class ThirdPersonCharacter : MonoBehaviour
     private GameObject _mainCamera;
 
     // detecting if the character is walking into the environment walls/ obstacles
-    public float wallCollisionAngleThreshold = 0.9f, wallCollisionDistanceThreshold = 0.16f;
+    [SerializeField] private float wallCollisionAngleThreshold = 0.9f, wallCollisionDistanceThreshold = 0.16f;
     private Vector3? collisionPoint = null;
     public bool WallCollision
     {
@@ -119,11 +119,15 @@ public class ThirdPersonCharacter : MonoBehaviour
         }
     }
 
+    // Vaulting and Climbing
+    private Vector3 StepOffset;
+    private float obstacleHeight;
+    [SerializeField] private float obstacleTallnessThreshold = 1.2f, obstacleThicknessThreshold = 0.5f;
+
     // character speed and direction
     private Vector3 inputDirection => new Vector3(brain.move().x, 0.0f, brain.move().y).normalized;
     private float inputMagnitude => 1; //_input.analogMovement ? _input.move.magnitude : 1f;
     private float baseSpeed, sprintMultiplier, strafeMultiplier, crouchMultiplier;
-    // private float targetSpeed => Idle || WallCollision? 0: Strafing? Sprint? StrafeRunSpeed: StrafeSpeed : Sprint ? SprintSpeed : MoveSpeed; 
     private float targetSpeed => baseSpeed * (Strafing? strafeMultiplier: 1) * (Sprint? sprintMultiplier: 1) * (Crouching? crouchMultiplier: 1) * (Idle || WallCollision? 0: 1);
     private Vector3 targetDirection => Quaternion.Euler(0.0f, _targetRotation, 0.0f) * (Strafing? inputDirection.normalized: Vector3.forward);
 
@@ -178,6 +182,8 @@ public class ThirdPersonCharacter : MonoBehaviour
         sprintMultiplier = SprintSpeed / MoveSpeed;
         strafeMultiplier = StrafeSpeed / MoveSpeed;
         crouchMultiplier = CrouchSpeed / MoveSpeed;
+
+        StepOffset =  new Vector3(0, _controller.stepOffset, 0);
     }
 
     private void Update()
@@ -315,7 +321,6 @@ public class ThirdPersonCharacter : MonoBehaviour
             {
                 _fallTimeoutDelta -= Time.deltaTime;
             }
-
         }
         // update rate for turning in place
         // if(Strafing & Idle)
@@ -336,6 +341,7 @@ public class ThirdPersonCharacter : MonoBehaviour
     {
         Crouching = !Crouching;
         
+        // if crouching halve the character controller's height
         if(Crouching)
         {
             _controller.height /= 2;
@@ -350,13 +356,13 @@ public class ThirdPersonCharacter : MonoBehaviour
 
     private void Jump()
     {
-        if(Strafing | Crouching) return; // don't have Strafe jump animations and crouching jump don't make sense
-
-        if(WallCollision)
+        if(WallCollision && Grounded)
         {
             Climb();
-            // return;
+            return;
         }
+        if(Strafing | Crouching) return; // don't have Strafe jump animations and crouching jump don't make sense
+
         if (_jumpTimeoutDelta <= 0.0f && Grounded)
         {
             // the square root of H * -2 * G = how much velocity needed to reach desired height
@@ -372,12 +378,33 @@ public class ThirdPersonCharacter : MonoBehaviour
 
     private void Climb()
     {
-        // TO-DO: determine whether to climb or vault over and do it
-        Ray ray = new Ray((Vector3)collisionPoint + new Vector3(0, 5, 0), Vector3.down);
+        // check for ceilings
+        Ray ray = new Ray(transform.position + new Vector3(0, _controller.height, 0), Vector3.up);
+        if(Physics.Raycast(ray)) return;
+
         RaycastHit hit;
-        if(Physics.Raycast(ray, out hit))
+        // get the position (point) of the obstacle
+        ray = new Ray(transform.position + StepOffset , transform.forward);
+        if(Physics.Raycast(ray, out hit, 0.76f, GroundLayers))
         {
-            print(transform.position.y - hit.point.y);
+            var normal = hit.normal;
+            // get the height of the obstacle
+            ray = new Ray(hit.point + -normal * 0.1f + new Vector3(0, 9, 0), Vector3.down);
+            if(Physics.Raycast(ray, out hit))
+            {
+                obstacleHeight = hit.point.y - transform.position.y;
+            }
+
+            // if it's too tall, just quit trying
+            if(obstacleHeight > obstacleTallnessThreshold) return;
+            
+            // get the thickness of the obstacle
+            ray = new Ray(ray.origin + (-normal * obstacleThicknessThreshold), ray.direction);
+            if(Physics.Raycast(ray, out hit))
+            {
+                // check obstacle's height and width to determine what to do (vaulting, climbing, ...)
+                print(Mathf.Round(hit.point.y - transform.position.y) >= Mathf.Round(obstacleHeight)? "climb on it": "vault over it");
+            }
         }
     }
 
@@ -390,7 +417,6 @@ public class ThirdPersonCharacter : MonoBehaviour
             {
                 _verticalVelocity = -2f;
             }
-
         }
 
         // apply gravity over time if under terminal (multiply by delta time twice to linearly speed up over time)
